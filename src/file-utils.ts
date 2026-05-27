@@ -1,9 +1,12 @@
 import { spawn, ExitCodeError } from '@malept/cross-spawn-promise';
+import { minimatch } from 'minimatch';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { promises as stream } from 'node:stream';
 
 const MACHO_PREFIX = 'Mach-O ';
+
+const UNPACKED_ASAR_PATH = path.join('Contents', 'Resources', 'app.asar.unpacked');
 
 export enum AppFileType {
   MACHO,
@@ -11,6 +14,7 @@ export enum AppFileType {
   INFO_PLIST,
   SNAPSHOT,
   APP_CODE,
+  SINGLE_ARCH,
 }
 
 export type AppFile = {
@@ -18,11 +22,37 @@ export type AppFile = {
   type: AppFileType;
 };
 
+export type GetAllAppFilesOpts = {
+  singleArchFiles?: string;
+};
+
+const isSingleArchFile = (relativePath: string, opts: GetAllAppFilesOpts): boolean => {
+  if (opts.singleArchFiles === undefined) {
+    return false;
+  }
+
+  const unpackedPath = path.relative(UNPACKED_ASAR_PATH, relativePath);
+
+  // Outside of app.asar.unpacked
+  if (unpackedPath.startsWith('..')) {
+    return false;
+  }
+
+  return minimatch(unpackedPath, opts.singleArchFiles, {
+    matchBase: true,
+  });
+};
+
 /**
  *
  * @param appPath Path to the application
  */
-export const getAllAppFiles = async (appPath: string): Promise<AppFile[]> => {
+export const getAllAppFiles = async (
+  appPath: string,
+  opts: GetAllAppFilesOpts,
+): Promise<AppFile[]> => {
+  const unpackedPath = path.join('Contents', 'Resources', 'app.asar.unpacked');
+
   const files: AppFile[] = [];
 
   const visited = new Set<string>();
@@ -34,6 +64,8 @@ export const getAllAppFiles = async (appPath: string): Promise<AppFile[]> => {
     const info = await fs.stat(p);
     if (info.isSymbolicLink()) return;
     if (info.isFile()) {
+      const relativePath = path.relative(appPath, p);
+
       let fileType = AppFileType.PLAIN;
 
       var fileOutput = '';
@@ -48,6 +80,8 @@ export const getAllAppFiles = async (appPath: string): Promise<AppFile[]> => {
       }
       if (p.endsWith('.asar')) {
         fileType = AppFileType.APP_CODE;
+      } else if (isSingleArchFile(relativePath, opts)) {
+        fileType = AppFileType.SINGLE_ARCH;
       } else if (fileOutput.startsWith(MACHO_PREFIX)) {
         fileType = AppFileType.MACHO;
       } else if (p.endsWith('.bin')) {
@@ -57,7 +91,7 @@ export const getAllAppFiles = async (appPath: string): Promise<AppFile[]> => {
       }
 
       files.push({
-        relativePath: path.relative(appPath, p),
+        relativePath,
         type: fileType,
       });
     }

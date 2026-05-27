@@ -74,7 +74,12 @@ export type MakeUniversalOpts = {
 };
 
 const dupedFiles = (files: AppFile[]) =>
-  files.filter((f) => f.type !== AppFileType.SNAPSHOT && f.type !== AppFileType.APP_CODE);
+  files.filter(
+    (f) =>
+      f.type !== AppFileType.SNAPSHOT &&
+      f.type !== AppFileType.APP_CODE &&
+      f.type !== AppFileType.SINGLE_ARCH,
+  );
 
 export const makeUniversalApp = async (opts: MakeUniversalOpts): Promise<void> => {
   d('making a universal app with options', opts);
@@ -120,8 +125,8 @@ export const makeUniversalApp = async (opts: MakeUniversalOpts): Promise<void> =
 
     const uniqueToX64: string[] = [];
     const uniqueToArm64: string[] = [];
-    const x64Files = await getAllAppFiles(await fs.realpath(tmpApp));
-    const arm64Files = await getAllAppFiles(await fs.realpath(opts.arm64AppPath));
+    const x64Files = await getAllAppFiles(await fs.realpath(tmpApp), opts);
+    const arm64Files = await getAllAppFiles(await fs.realpath(opts.arm64AppPath), opts);
 
     for (const file of dupedFiles(x64Files)) {
       if (!arm64Files.some((f) => f.relativePath === file.relativePath))
@@ -142,7 +147,9 @@ export const makeUniversalApp = async (opts: MakeUniversalOpts): Promise<void> =
       );
     }
 
-    for (const file of x64Files.filter((f) => f.type === AppFileType.PLAIN)) {
+    // Single Arch files are copied as is without processing.
+    const multiArchFiles = x64Files.filter((f) => f.type !== AppFileType.SINGLE_ARCH);
+    for (const file of multiArchFiles.filter((f) => f.type === AppFileType.PLAIN)) {
       const x64Sha = await sha(path.resolve(opts.x64AppPath, file.relativePath));
       const arm64Sha = await sha(path.resolve(opts.arm64AppPath, file.relativePath));
       if (x64Sha !== arm64Sha) {
@@ -158,7 +165,7 @@ export const makeUniversalApp = async (opts: MakeUniversalOpts): Promise<void> =
       }
     }
     const knownMergedMachOFiles = new Set();
-    for (const machOFile of x64Files.filter((f) => f.type === AppFileType.MACHO)) {
+    for (const machOFile of multiArchFiles.filter((f) => f.type === AppFileType.MACHO)) {
       const first = await fs.realpath(path.resolve(tmpApp, machOFile.relativePath));
       const second = await fs.realpath(path.resolve(opts.arm64AppPath, machOFile.relativePath));
 
@@ -338,9 +345,9 @@ export const makeUniversalApp = async (opts: MakeUniversalOpts): Promise<void> =
       }
     }
 
-    const generatedIntegrity = await computeIntegrityData(path.join(tmpApp, 'Contents'));
+    const generatedIntegrity = await computeIntegrityData(path.join(tmpApp, 'Contents'), opts);
 
-    const plistFiles = x64Files.filter((f) => f.type === AppFileType.INFO_PLIST);
+    const plistFiles = multiArchFiles.filter((f) => f.type === AppFileType.INFO_PLIST);
     for (const plistFile of plistFiles) {
       const x64PlistPath = path.resolve(opts.x64AppPath, plistFile.relativePath);
       const arm64PlistPath = path.resolve(opts.arm64AppPath, plistFile.relativePath);

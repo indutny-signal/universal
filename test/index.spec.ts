@@ -148,6 +148,65 @@ describe('makeUniversalApp', () => {
     );
 
     it(
+      'should merge two different asars with native files when `mergeASARs` is enabled',
+      async () => {
+        const x64AppPath = await generateNativeApp({
+          appNameWithExtension: 'SingleArchFiles-x64.app',
+          arch: 'x64',
+          createAsar: true,
+          singleArchBindings: true,
+        });
+        const arm64AppPath = await generateNativeApp({
+          appNameWithExtension: 'SingleArchFiles-arm64.app',
+          arch: 'arm64',
+          createAsar: true,
+          singleArchBindings: true,
+        });
+        const out = path.resolve(appsOutPath, 'SingleArchFiles.app');
+        await makeUniversalApp({
+          x64AppPath,
+          arm64AppPath,
+          outAppPath: out,
+          mergeASARs: true,
+          singleArchFiles: 'hello-world-*',
+        });
+        await verifyApp(out, true);
+      },
+      VERIFY_APP_TIMEOUT,
+    );
+
+    it(
+      'throws an error if `mergeASARs` is enabled and `singleArchFiles` is missing a unique native file',
+      async () => {
+        const x64AppPath = await generateNativeApp({
+          appNameWithExtension: 'SingleArchFiles-2-x64.app',
+          arch: 'x64',
+          createAsar: true,
+          singleArchBindings: true,
+        });
+        const arm64AppPath = await generateNativeApp({
+          appNameWithExtension: 'SingleArchFiles-2-arm64.app',
+          arch: 'arm64',
+          createAsar: true,
+          singleArchBindings: true,
+        });
+        const out = path.resolve(appsOutPath, 'SingleArchFiles-2.app');
+        await expect(
+          makeUniversalApp({
+            x64AppPath,
+            arm64AppPath,
+            outAppPath: out,
+            mergeASARs: true,
+            singleArchFiles: 'bad-rule',
+          }),
+        ).rejects.toThrow(
+          /the number of mach-o files is not the same between the arm64 and x64 builds/,
+        );
+      },
+      VERIFY_APP_TIMEOUT,
+    );
+
+    it(
       'should not inject ElectronAsarIntegrity into `infoPlistsToIgnore`',
       async () => {
         const arm64AppPath = await templateApp('Arm64-1.app', 'arm64', async (appPath) => {

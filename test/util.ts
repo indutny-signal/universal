@@ -31,7 +31,12 @@ export const verifyApp = async (appPath: string, containsRuntimeGeneratedMacho =
     // verify header
     const asarFs = getRawHeader(path.resolve(resourcesDir, asar));
     expect(
-      removeUnstableProperties(asarFs.header, containsRuntimeGeneratedMacho ? ['hello-world'] : []),
+      removeUnstableProperties(
+        asarFs.header,
+        containsRuntimeGeneratedMacho
+          ? ['hello-world', 'hello-world-arm64', 'hello-world-x64']
+          : [],
+      ),
     ).toMatchSnapshot();
   }
 
@@ -51,7 +56,7 @@ export const verifyApp = async (appPath: string, containsRuntimeGeneratedMacho =
     await verifyFileTree(path.resolve(resourcesDir, dir));
   }
 
-  const allFiles = await fileUtils.getAllAppFiles(appPath);
+  const allFiles = await fileUtils.getAllAppFiles(appPath, {});
   const infoPlists = allFiles
     .filter(
       (appFile) =>
@@ -85,7 +90,7 @@ const extractAsarIntegrity = async (infoPlist: string) => {
 };
 
 export const verifyFileTree = async (dirPath: string) => {
-  const dirFiles = await fileUtils.getAllAppFiles(dirPath);
+  const dirFiles = await fileUtils.getAllAppFiles(dirPath, {});
   const files = dirFiles.map((file) => {
     const it = path.join(dirPath, file.relativePath);
     const name = toSystemIndependentPath(file.relativePath);
@@ -217,6 +222,7 @@ export const generateNativeApp = async (options: {
   createAsar: boolean;
   nativeModuleArch?: string;
   additionalFiles?: Record<string, string>;
+  singleArchBindings?: boolean;
 }) => {
   const {
     appNameWithExtension,
@@ -224,6 +230,7 @@ export const generateNativeApp = async (options: {
     createAsar,
     nativeModuleArch = arch,
     additionalFiles,
+    singleArchBindings,
   } = options;
   const appPath = await templateApp(appNameWithExtension, arch, async (appPath) => {
     const resources = path.join(appPath, 'Contents', 'Resources');
@@ -235,13 +242,16 @@ export const generateNativeApp = async (options: {
       path.basename(appNameWithExtension, '.app'),
       additionalFiles,
     );
-    await fs.copy(
-      path.join(appsDir, `hello-world-${nativeModuleArch}`),
-      path.join(testPath, 'hello-world'),
-    );
+    let targetBinding: string;
+    if (singleArchBindings) {
+      targetBinding = path.join(testPath, `hello-world-${nativeModuleArch}`);
+    } else {
+      targetBinding = path.join(testPath, 'hello-world');
+    }
+    await fs.copy(path.join(appsDir, `hello-world-${nativeModuleArch}`), targetBinding);
     if (createAsar) {
       await createPackageWithOptions(testPath, path.resolve(resources, 'app.asar'), {
-        unpack: '**/hello-world',
+        unpack: '**/hello-world*',
       });
     } else {
       await fs.copy(testPath, resourcesApp);
